@@ -1,14 +1,14 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion } from "framer-motion"; // make sure this is here
 
 export default function Background() {
-  const particleCount = 60; // increase/decrease for more particles
+  const particleCount = 60;
 
   return (
-    <div className="absolute inset-0 -z-10 pointer-events-none overflow-hidden">
-      {/* Gradient or solid background */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black via-blue-950 to-black"></div>
+    <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden">
+      {/* Gradient background */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black via-blue-700 to-black"></div>
 
       {/* Floating particles */}
       {[...Array(particleCount)].map((_, i) => (
@@ -35,3 +35,5 @@ export default function Background() {
     </div>
   );
 }
+
+

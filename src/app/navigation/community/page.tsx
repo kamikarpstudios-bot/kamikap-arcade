@@ -1,10 +1,10 @@
 "use client";
 
-import LeaderboardCard from "./components /LeaderboardCard";
-import AnnouncementsCard from "./components /AnnouncemensCard";
-import PollsCard from "./components /PollsCard";
-import GameSuggestionsCard from "./components /GameSuggestionsCard";
-import CommunityChatCard from "./components /CommunityChatCard";
+import LeaderboardCard from "./components/LeaderboardCard";
+import AnnouncementsCard from "./components/AnnouncemensCard";
+import PollsCard from "./components/PollsCard";
+import GameSuggestionsCard from "./components/GameSuggestionsCard";
+import CommunityChatCard from "./components/CommunityChatCard";
 
 // =======================
 // COMMUNITY PAGE
