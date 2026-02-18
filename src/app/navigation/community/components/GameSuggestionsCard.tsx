@@ -1,101 +1,204 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useAuth } from "@/app/lib/AuthContext";
 import CardShell from "./CardShell";
+import { db } from "@/app/lib/firebase";
+import {
+  collection,
+  addDoc,
+  doc,
+  updateDoc,
+  deleteDoc,
+  query,
+  orderBy,
+  onSnapshot,
+  serverTimestamp,
+} from "firebase/firestore";
 
 type Suggestion = {
-  id: number;
-  user: string;
+  id: string;
+  username: string;
   avatar: string;
   text: string;
   likes: number;
+  voters: string[]; // track who voted
+  createdAt: any;
 };
 
-type Props = { className?: string };
+type Props = { className?: string; maxFeedHeight?: string };
 
-export default function GameSuggestionsCard({ className }: Props) {
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([
-    { id: 1, user: "Alice", avatar: "https://i.pravatar.cc/40?img=1", text: "💡 Add new levels with secret rooms and Easter eggs!", likes: 5 },
-    { id: 2, user: "Bob", avatar: "https://i.pravatar.cc/40?img=2", text: "🎨 Customizable avatars with hats and pets", likes: 8 },
-    { id: 3, user: "Charlie", avatar: "https://i.pravatar.cc/40?img=3", text: "🌐 Multiplayer mode with 2v2 co-op challenges", likes: 3 },
-  ]);
+export default function GameSuggestionsCard({ className, maxFeedHeight = "h-64" }: Props) {
+  const { user } = useAuth();
+  const isDev = user?.role === "dev";
 
-  const [likedIds, setLikedIds] = useState<number[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [newIdea, setNewIdea] = useState("");
+  const [likedIds, setLikedIds] = useState<string[]>([]);
 
-  const addSuggestion = () => {
-    if (!newIdea.trim()) return;
-    setSuggestions([
-      { id: Date.now(), user: "You", avatar: "https://i.pravatar.cc/40?img=5", text: newIdea, likes: 0 },
-      ...suggestions,
-    ]);
+  // ---------------- Real-time listener ----------------
+  useEffect(() => {
+    const q = query(collection(db, "gameSuggestions"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const data: Suggestion[] = snap.docs.map((d) => {
+        const raw = d.data();
+        return {
+          id: d.id,
+          username: raw.username || "unknown",
+          avatar: raw.avatar || "😀",
+          text: raw.text || "",
+          likes: raw.likes || 0,
+          voters: raw.voters || [],
+          createdAt: raw.createdAt || null,
+        };
+      });
+      setSuggestions(data);
+
+      // Keep already voted ids
+      if (user) {
+        const voted = data.filter((s) => s.voters.includes(user.username));
+        setLikedIds(voted.map((s) => s.id));
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // ---------------- Add a new suggestion ----------------
+  const addSuggestion = async () => {
+    if (!user || !newIdea.trim()) return;
+
+    await addDoc(collection(db, "gameSuggestions"), {
+      username: user.username,
+      avatar: user.profilePic || "😀",
+      text: newIdea.trim(),
+      likes: 0,
+      voters: [],
+      createdAt: serverTimestamp(),
+    });
+
     setNewIdea("");
   };
 
-  const likeSuggestion = (id: number) => {
-    if (likedIds.includes(id)) return; // one like per user
-    setSuggestions(prev => prev.map(s => s.id === id ? { ...s, likes: s.likes + 1 } : s));
-    setLikedIds(prev => [...prev, id]);
+  // ---------------- Like / vote ----------------
+  const likeSuggestion = async (s: Suggestion) => {
+    if (!user || isDev) return; // devs cannot vote
+    if (s.voters.includes(user.username)) return; // already voted
+
+    const docRef = doc(db, "gameSuggestions", s.id);
+
+    // Optimistic UI update
+    setSuggestions((prev) =>
+      prev.map((g) =>
+        g.id === s.id
+          ? { ...g, likes: g.likes + 1, voters: [...g.voters, user.username] }
+          : g
+      )
+    );
+    setLikedIds((prev) => [...prev, s.id]);
+
+    await updateDoc(docRef, {
+      likes: s.likes + 1,
+      voters: [...s.voters, user.username],
+    });
   };
 
-  const topSuggestions = [...suggestions].sort((a, b) => b.likes - a.likes).slice(0, 3);
+  // ---------------- Delete suggestion (for devs) ----------------
+  const deleteSuggestion = async (id: string) => {
+    if (!isDev) return;
+    const docRef = doc(db, "gameSuggestions", id);
+    await deleteDoc(docRef);
+  };
 
+  // ---------------- Top 3 suggestions ----------------
+  const topSuggestions = [...suggestions]
+    .sort((a, b) => b.likes - a.likes)
+    .slice(0, 3);
+
+  // ---------------- Render ----------------
   return (
     <div className={`flex gap-6 ${className}`}>
       {/* LEFT: Feed */}
       <div className="flex-1 flex flex-col gap-3">
-        <CardShell title="" className="p-3 flex flex-col">
+        <CardShell title="Game Suggestions" className="p-3 flex flex-col">
           {/* Posting bar */}
-          <div className="flex items-center gap-3 mb-3">
-            <img src="https://i.pravatar.cc/40?img=5" alt="User" className="w-10 h-10 rounded-full" />
-            <input
-              type="text"
-              placeholder="Share your game idea..."
-              value={newIdea}
-              onChange={(e) => setNewIdea(e.target.value)}
-              className="flex-1 border border-gray-600 bg-gray-900/60 text-white placeholder-gray-400 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
-            <button
-              onClick={addSuggestion}
-              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-            >
-              Post
-            </button>
-          </div>
-
-          {/* Scrollable feed with fixed height */}
-          <div className="relative h-64 overflow-y-auto flex flex-col space-y-3 pr-2 p-2 rounded scrollbar-dark bg-gradient-to-b from-gray-900/80 via-gray-900/95 to-gray-900">
-            {suggestions.map((s) => (
-              <div
-                key={s.id}
-                className="p-3 rounded bg-gray-800/70 border border-gray-700 hover:bg-gray-700/70 transition-all duration-300 transform hover:-translate-y-0.5 hover:shadow-lg flex justify-between items-start"
-              >
-                <div className="flex items-start gap-3">
-                  <img src={s.avatar} alt={s.user} className="w-10 h-10 rounded-full mt-1" />
-                  <div>
-                    <p className="font-semibold text-white">{s.user}</p>
-                    <p className="text-sm text-white/80 break-words">{s.text}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => likeSuggestion(s.id)}
-                  className={`flex items-center gap-1 text-sm mt-1 ${
-                    likedIds.includes(s.id) ? "text-gray-400 cursor-not-allowed" : "text-blue-500 hover:text-blue-700"
-                  }`}
-                  disabled={likedIds.includes(s.id)}
-                >
-                  👍 {s.likes}
-                </button>
+          {user && (
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-2xl border border-white/20 mt-1">
+                {user.profilePic || "😀"}
               </div>
-            ))}
+              <input
+                type="text"
+                placeholder="Share your game idea..."
+                value={newIdea}
+                onChange={(e) => setNewIdea(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addSuggestion();
+                  }
+                }}
+                className="flex-1 border border-gray-600 bg-gray-900/60 text-white placeholder-gray-400 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 break-words"
+              />
+              <button
+                onClick={addSuggestion}
+                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+              >
+                Post
+              </button>
+            </div>
+          )}
 
-            {suggestions.length === 0 && (
-              <p className="text-sm text-white/40 text-center py-6">
-                No suggestions yet
-              </p>
+          {/* Scrollable feed */}
+          <div
+            className={`relative ${maxFeedHeight} overflow-y-auto flex flex-col space-y-3 pr-2 p-2 rounded scrollbar-dark bg-gradient-to-b from-gray-900/80 via-gray-900/95 to-gray-900`}
+          >
+            {suggestions.length > 0 ? (
+              suggestions.map((s) => {
+                const voted = user ? s.voters.includes(user.username) : false;
+                return (
+                  <div
+                    key={s.id}
+                    className="p-3 rounded bg-gray-800/70 border border-gray-700 hover:bg-gray-700/70 transition-all duration-300 transform hover:-translate-y-0.5 hover:shadow-lg flex justify-between items-start break-words"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-2xl border border-white/20 mt-1">
+                        {s.avatar}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-white">{s.username}</p>
+                        <p className="text-sm text-white/80 break-words">{s.text}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => likeSuggestion(s)}
+                        disabled={voted || isDev}
+                        className={`flex items-center gap-1 text-sm mt-1 ${
+                          voted || isDev
+                            ? "text-gray-400 cursor-not-allowed"
+                            : "text-blue-500 hover:text-blue-700"
+                        }`}
+                      >
+                        👍 {s.likes}
+                      </button>
+
+                      {isDev && (
+                        <button
+                          onClick={() => deleteSuggestion(s.id)}
+                          className="text-red-500 hover:text-red-700 text-sm"
+                        >
+                          🗑
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-sm text-white/40 text-center py-6">No suggestions yet</p>
             )}
-
-            <div className="absolute inset-0 pointer-events-none animate-gradient-slow rounded"></div>
           </div>
         </CardShell>
       </div>
@@ -103,27 +206,40 @@ export default function GameSuggestionsCard({ className }: Props) {
       {/* RIGHT: Top 3 Leaderboard */}
       <div className="w-80 flex flex-col gap-3">
         <CardShell title="Top Game Ideas" className="p-3 flex flex-col">
-          <div className="relative h-64 overflow-y-auto flex flex-col space-y-2 pr-2 p-2 rounded scrollbar-dark bg-gradient-to-b from-gray-900/80 via-gray-900/95 to-gray-900">
-            {topSuggestions.map((s) => (
-              <div key={s.id} className="p-2 rounded bg-gray-800/70 border border-gray-700 hover:bg-gray-700/70 transition-all duration-300 transform hover:-translate-y-0.5 hover:shadow-lg flex justify-between items-start">
-                <div className="flex items-start gap-2">
-                  <img src={s.avatar} alt={s.user} className="w-8 h-8 rounded-full mt-1" />
-                  <div>
-                    <p className="font-semibold text-sm text-white">{s.user}</p>
-                    <p className="text-sm text-white/80 break-words">{s.text}</p>
+          <div
+            className={`relative ${maxFeedHeight} overflow-y-auto flex flex-col space-y-2 pr-2 p-2 rounded scrollbar-dark bg-gradient-to-b from-gray-900/80 via-gray-900/95 to-gray-900`}
+          >
+            {topSuggestions.length > 0 ? (
+              topSuggestions.map((s) => (
+                <div
+                  key={s.id}
+                  className="p-2 rounded bg-gray-800/70 border border-gray-700 hover:bg-gray-700/70 transition-all duration-300 transform hover:-translate-y-0.5 hover:shadow-lg flex justify-between items-start break-words"
+                >
+                  <div className="flex items-start gap-2">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xl border border-white/20 mt-1">
+                      {s.avatar}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm text-white">{s.username}</p>
+                      <p className="text-sm text-white/80 break-words">{s.text}</p>
+                    </div>
                   </div>
+
+                  {isDev && (
+                    <button
+                      onClick={() => deleteSuggestion(s.id)}
+                      className="text-red-500 hover:text-red-700 text-sm"
+                    >
+                      🗑
+                    </button>
+                  )}
+
+                  {!isDev && <span className="text-blue-500 font-semibold">{s.likes} 👍</span>}
                 </div>
-                <span className="text-blue-500 font-semibold">{s.likes} 👍</span>
-              </div>
-            ))}
-
-            {topSuggestions.length === 0 && (
-              <p className="text-sm text-white/40 text-center py-6">
-                No top ideas yet
-              </p>
+              ))
+            ) : (
+              <p className="text-sm text-white/40 text-center py-6">No top ideas yet</p>
             )}
-
-            <div className="absolute inset-0 pointer-events-none animate-gradient-slow rounded"></div>
           </div>
         </CardShell>
       </div>

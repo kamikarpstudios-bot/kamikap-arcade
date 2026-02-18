@@ -13,7 +13,6 @@ export default function Header() {
     { label: "Home", href: "/navigation/home" },
     { label: "Community", href: "/navigation/community" },
     { label: "Profile", href: "/navigation/profile" },
-    { label: "Settings", href: "/navigation/settings" },
   ];
 
   return (

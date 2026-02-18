@@ -3,6 +3,19 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import Link from "next/link";
 import { Orbitron } from "next/font/google";
+import CardShell from "../community/components/CardShell";
+import { useAuth } from "@/app/lib/AuthContext";
+import { db } from "@/app/lib/firebase";
+import {
+  collection,
+  query,
+  orderBy,
+  onSnapshot,
+  doc,
+  deleteDoc,
+  DocumentData,
+  QuerySnapshot,
+} from "firebase/firestore";
 
 const orbitron = Orbitron({ subsets: ["latin"], weight: ["400", "700"] });
 
@@ -22,6 +35,58 @@ const popularGames: { id: number; title: string; path: string }[] = [
   { id: 102, title: "Pixel Racer", path: "/games/pixel-racer" },
   { id: 103, title: "Laser Strike", path: "/games/laser-strike" },
 ];
+
+// ✅ Announcement widget
+type Announcement = {
+  id: string;
+  content: string;
+  createdAt?: any;
+};
+
+function LatestAnnouncementWidget({ className }: { className?: string }) {
+  const { user } = useAuth();
+  const [latest, setLatest] = useState<Announcement | null>(null);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, "announcements"),
+      orderBy("createdAt", "desc")
+    );
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot: QuerySnapshot<DocumentData>) => {
+        const docs = snapshot.docs.map(
+          (doc) => ({ id: doc.id, ...doc.data() } as Announcement)
+        );
+        setLatest(docs[0] || null);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  const handleDelete = async (id: string) => {
+    if (!user || user.role !== "dev") return;
+    await deleteDoc(doc(db, "announcements", id));
+  };
+
+  if (!latest) return null;
+
+  return (
+    <CardShell title="Latest Announcement" className={className}>
+      <div className="flex justify-between items-start">
+        <p className="text-white/80 text-sm">{latest.content}</p>
+        {user?.role === "dev" && (
+          <button
+            onClick={() => handleDelete(latest.id)}
+            className="ml-4 text-red-500 hover:text-red-400 text-sm font-semibold"
+          >
+            Delete
+          </button>
+        )}
+      </div>
+    </CardShell>
+  );
+}
 
 export default function HomePage() {
   const [search, setSearch] = useState("");
@@ -121,13 +186,14 @@ export default function HomePage() {
                 </li>
               ))
             ) : (
-              <li className="px-4 py-2 text-white/50">
-                No results found
-              </li>
+              <li className="px-4 py-2 text-white/50">No results found</li>
             )}
           </ul>
         )}
       </div>
+
+      {/* Latest Announcement */}
+      <LatestAnnouncementWidget className="max-w-7xl mx-auto px-4 mb-8" />
 
       {/* All Games Grid */}
       <div className="px-8 pb-12">
