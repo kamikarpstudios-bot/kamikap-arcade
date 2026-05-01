@@ -29,6 +29,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-  ],
+, "src/app/navigation/games/KamiKarpAlphaMon/Monsters/ButtButt123"  ],
   "exclude": ["node_modules"]
 }

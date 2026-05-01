@@ -1,23 +1,33 @@
-"use client";
+// src/app/navigation/layout.tsx
+"use client"; // because we use hooks
 
-import { ReactNode } from "react";
-import Header from "../components/header";
-import Background from "../components/backround"; // FIXED typo
-import { AuthProvider } from "../lib/AuthContext"; // or AuthContext if you renamed
+import { useState, useEffect } from "react";
+import { AuthProvider } from "@/app/lib/AuthContext";
+import Background from "@/app/components/backround";
+import Header from "@/app/components/header"; // <-- import your header
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true); // trigger client-only rendering
+  }, []);
+
   return (
     <html lang="en">
       <body className="relative min-h-screen w-full text-white antialiased">
         <AuthProvider>
-          {/* Persistent background */}
-          <Background />
+          {/* Render Background and Header only on client */}
+          {mounted && (
+            <>
+              <Background />
+              <Header />
+            </>
+          )}
 
-          {/* Persistent header */}
-          <Header />
-
-          {/* Push content below header */}
-          <main className="pt-16 px-4 relative z-10">{children}</main>
+          {/* Main page content */}
+          <main className="pt-16">{children}</main>
+          {/* pt-16 to offset header height so content isn't hidden behind fixed header */}
         </AuthProvider>
       </body>
     </html>
